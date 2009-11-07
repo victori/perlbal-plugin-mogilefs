@@ -1,0 +1,63 @@
+This is Perl module Perlbal::Plugin::MogileFS.
+
+INSTALLATION
+
+Perlbal::Plugin::MogileFS installation is straightforward. If your CPAN shell is set up,
+you should just be able to do
+
+    % cpan Perlbal::Plugin::MogileFS
+
+Download it, unpack it, then build it as per the usual:
+
+    % perl Makefile.PL
+    % make && make test
+
+Then install it:
+
+    % make install
+    
+DOCUMENTATION
+
+Perlbal::Plugin::MogileFS documentation is available as in POD. So you can do:
+
+    % perldoc Perlbal::Plugin::MogileFS
+    
+This plugin provides Perlbal the ability to serve data out of MogileFS.
+
+URL paths are converted to ':' delimited MogileFS keys. For example, '/video/10/default.jpg' is converted to 'video:10:default.jpg'. You can change the way keys are hashed by modifying the url_to_key function. Future releases will support URL to Key conversions to be setup in the Perlbal configuration.
+
+Configuration as follows:
+
+  See sample/perlbal.conf
+  
+  domain,trackers are required options.
+  fallback,max_requests are optional.
+  
+  domain        The default MogileFS domain to use for the service.
+  trackers      List of trackers comma delimited.
+  fallback      Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
+  max_requests  Max amount of fetch records to keep for statistics. Defaults to 100.
+  
+MANAGEMENT COMMANDS
+
+  Telnet into your Perlbal management interface that is normally configured on port 60000.
+
+  mogilefs_stats    Fetch statistics for all mogilefs web services served by this perlbal instance.
+  
+  mogilelookup    mogilefs_hits                       14
+  mogilelookup    mogilefs_misses                     12
+  mogilelookup    mogilefs_requests                   26
+
+  total           mogilefs_hits                       14
+  total           mogilefs_misses                     12
+  total           mogilefs_requests                   26
+  
+  mogilefs_recent   Fetch recent keys tried with MISS/HIT information. See which keys fail.
+  
+  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+  mogilelookup MISS  favicon.ico
+  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+  mogilelookup HIT   video:100:default.jpg
+  mogilelookup HIT   video:799:default.jpg:130
+
+- Victor Igumnov
