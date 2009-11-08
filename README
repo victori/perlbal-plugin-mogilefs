@@ -30,13 +30,31 @@ Configuration as follows:
 
   See sample/perlbal.conf
   
-  domain,trackers are required options.
-  fallback,max_requests are optional.
+  -- Required Configuration Options
   
-  domain        The default MogileFS domain to use for the service.
-  trackers      List of trackers comma delimited.
-  fallback      Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
-  max_requests  Max amount of fetch records to keep for statistics. Defaults to 100.
+  MOGILEFS domain = <domain name>
+    - Default: none
+    - The default MogileFS domain to use for the service.
+    
+  MOGILEFS trackers = <serv1:6001,serv2:6001>
+    - Default: none
+    - List of trackers comma delimited.
+    
+  -- Optional Configuration options
+    
+  MOGILEFS fallback = <1 or 0>
+    - Default: 0
+    - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
+    
+  MOGILEFS max_requests = <int> 
+    - Default: 100
+    - Max amount of fetch records to keep for statistics. Defaults to 100.
+    
+  MOGILEFS cache_control = <string>
+    - Default: off
+    - Suggested: max-age=2592000
+    - Cache-Control headers appended to responses on HIT for forward caching proxies. 
+      It is recommended to have squid or varnish in front.
   
 MANAGEMENT COMMANDS
 

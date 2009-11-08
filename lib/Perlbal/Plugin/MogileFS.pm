@@ -9,11 +9,6 @@ use MogileFS::Client;
 #
 # LOAD MogileFS
 # SET plugins        = MogileFS
-# MOGILEFS domain = foo
-# MOGILEFS trackers = foo:6001,foo2:6001
-# MOGILEFS fallback = 1
-# MOGILEFS max_recent = 100
-#
 
 # define all stats keys here
 our @statkeys = qw(mogilefs_requests mogilefs_misses mogilefs_hits);
@@ -30,7 +25,7 @@ sub url_to_key {
 }
 
 sub mogilefs_config {
-  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent) = <input>");
+  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|cache_control)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent) = <input>");
   my ($cmd,$result) = $mc->args;
   
   my $svcname;
@@ -50,7 +45,7 @@ our %statobjs;
 sub register {
     my ( $class, $svc ) = @_;
     
-    my $max_recent = ($svc->{extra_config}->{max_recent} == undef) ? 100 : $svc->{extra_config}->{max_recent};
+    my $max_recent = ($svc->{extra_config}->{max_recent} eq undef) ? 100 : $svc->{extra_config}->{max_recent};
     
     my @trackers = split(/,/,$svc->{extra_config}->{trackers});
     my $mogc = MogileFS::Client->new(domain => $svc->{extra_config}->{domain},hosts  => \@trackers);  
@@ -82,10 +77,12 @@ sub register {
       
       # if fallback is true and mogilefs does not have anything, fallback to docroot
       return 0 if $svc->{extra_config}->{fallback} == 1 && $miss;
-      
-      my $res = $c->{res_headers} = Perlbal::HTTPHeaders->new_response($code);
-      $res->header('X-Reproxy-URL',join(' ',@paths)) unless $miss;
 
+      my $res = $c->{res_headers} = Perlbal::HTTPHeaders->new_response($code);
+      $res->header('Cache-Control',$svc->{extra_config}->{cache_control}) if defined $svc->{extra_config}->{cache_control} && $miss == 0;
+      $res->header('X-Reproxy-URL',join(' ',@paths)) unless $miss;
+      
+      
       my $body;
       $res->header("Content-Type", "text/html");
       my $en = $res->http_code_english;
@@ -222,13 +219,31 @@ Configuration as follows:
 
   See sample/perlbal.conf
   
-  domain,trackers are required options.
-  fallback,max_requests are optional.
+  -- Required Configuration Options
   
-  domain        The default MogileFS domain to use for the service.
-  trackers      List of trackers comma delimited.
-  fallback      Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
-  max_requests  Max amount of fetch records to keep for statistics. Defaults to 100.
+  MOGILEFS domain = <domain name>
+    - Default: none
+    - The default MogileFS domain to use for the service.
+    
+  MOGILEFS trackers = <serv1:6001,serv2:6001>
+    - Default: none
+    - List of trackers comma delimited.
+    
+  -- Optional Configuration options
+    
+  MOGILEFS fallback = <1 or 0>
+    - Default: 0
+    - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
+    
+  MOGILEFS max_requests = <int> 
+    - Default: 100
+    - Max amount of fetch records to keep for statistics. Defaults to 100.
+    
+  MOGILEFS cache_control = <string>
+    - Default: off
+    - Suggested: max-age=2592000
+    - Cache-Control headers appended to responses on HIT for forward caching proxies. 
+      It is recommended to have squid or varnish in front.
   
 =head1 MANAGEMENT COMMANDS
 

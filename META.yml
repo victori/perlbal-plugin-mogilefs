@@ -1,23 +1,26 @@
---- 
-abstract: ~
-author: ~
-build_requires: 
+---
+abstract: 'perlbal gateway to MogileFS'
+author:
+  - 'Victor Igumnov, C<< <victori at fabulously40.com> >>'
+build_requires:
+  ExtUtils::MakeMaker: 6.42
   Test::Declare: 0
   Test::More: 0
-requires:
-  Perlbal: 1.73
-  Data::Dumper: 2.125
-  MogileFS::Client: 1.09
+configure_requires:
+  ExtUtils::MakeMaker: 6.42
 distribution_type: module
-generated_by: Module::Install version 0.680
+generated_by: 'Module::Install version 0.91'
 license: unknown
-meta-spec: 
-  url: http://module-build.sourceforge.net/META-spec-v1.3.html
-  version: 1.3
+meta-spec:
+  url: http://module-build.sourceforge.net/META-spec-v1.4.html
+  version: 1.4
 name: Perlbal-Plugin-MogileFS
-no_index: 
-  directory: 
+no_index:
+  directory:
     - inc
     - t
-#requires: 
-version: 0.01
+requires:
+  Data::Dumper: 0
+  MogileFS::Client: 0
+  Perlbal: 0
+version: undef
