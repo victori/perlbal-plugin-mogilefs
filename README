@@ -46,9 +46,13 @@ Configuration as follows:
     - Default: 0
     - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
     
-  MOGILEFS max_requests = <int> 
+  MOGILEFS max_recent = <int> 
     - Default: 100
     - Max amount of fetch records to keep for statistics. Defaults to 100.
+    
+  MOGILEFS max_miss = <int> 
+    - Default: 100
+    - Max amount of fetch records to keep for MISS statistics. Defaults to 100.
     
   MOGILEFS cache_control = <string>
     - Default: off
@@ -58,24 +62,30 @@ Configuration as follows:
   
 MANAGEMENT COMMANDS
 
-  Telnet into your Perlbal management interface that is normally configured on port 60000.
+    Telnet into your Perlbal management interface that is normally configured on port 60000.
 
-  mogilefs_stats    Fetch statistics for all mogilefs web services served by this perlbal instance.
-  
-  mogilelookup    mogilefs_hits                       14
-  mogilelookup    mogilefs_misses                     12
-  mogilelookup    mogilefs_requests                   26
+    mogilefs_stats    Fetch statistics for all mogilefs web services served by this perlbal instance.
 
-  total           mogilefs_hits                       14
-  total           mogilefs_misses                     12
-  total           mogilefs_requests                   26
-  
-  mogilefs_recent   Fetch recent keys tried with MISS/HIT information. See which keys fail.
-  
-  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
-  mogilelookup MISS  favicon.ico
-  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
-  mogilelookup HIT   video:100:default.jpg
-  mogilelookup HIT   video:799:default.jpg:130
+    mogilelookup    mogilefs_hits                       14
+    mogilelookup    mogilefs_misses                     12
+    mogilelookup    mogilefs_requests                   26
+
+    total           mogilefs_hits                       14
+    total           mogilefs_misses                     12
+    total           mogilefs_requests                   26
+
+    mogilefs_recent   Fetch recent keys tried with MISS/HIT information. See which keys fail.
+
+    mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+    mogilelookup MISS  favicon.ico
+    mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+    mogilelookup HIT   video:100:default.jpg
+    mogilelookup HIT   video:799:default.jpg:130
+
+    mogilefs_misses   Fetch recent keys that came back as a MISS. See which keys fail.
+
+    mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+    mogilelookup MISS  favicon.ico
+    mogilelookup MISS  photo:13936:ron-and-jan.tif:640
 
 - Victor Igumnov

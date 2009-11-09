@@ -25,7 +25,7 @@ sub url_to_key {
 }
 
 sub mogilefs_config {
-  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|cache_control)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent) = <input>");
+  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|max_miss|cache_control)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent|max_miss) = <input>");
   my ($cmd,$result) = $mc->args;
   
   my $svcname;
@@ -46,6 +46,7 @@ sub register {
     my ( $class, $svc ) = @_;
     
     my $max_recent = ($svc->{extra_config}->{max_recent} eq undef) ? 100 : $svc->{extra_config}->{max_recent};
+    my $max_miss = ($svc->{extra_config}->{max_miss} eq undef) ? 100 : $svc->{extra_config}->{max_miss};
     
     my @trackers = split(/,/,$svc->{extra_config}->{trackers});
     my $mogc = MogileFS::Client->new(domain => $svc->{extra_config}->{domain},hosts  => \@trackers);  
@@ -74,6 +75,11 @@ sub register {
       
       push @{$sobj->{mogilefs_recent}}, sprintf('%s  %s',  $miss == 1 ? 'MISS' : 'HIT ', $mogkey );
       shift(@{$sobj->{mogilefs_recent}}) if scalar(@{$sobj->{mogilefs_recent}}) > $max_recent;
+      
+      if ($miss) {
+        push @{$sobj->{mogilefs_miss_recent}}, sprintf('%s  %s', 'MISS', $mogkey );
+        shift(@{$sobj->{mogilefs_miss_recent}}) if scalar(@{$sobj->{mogilefs_miss_recent}}) > $max_miss;
+      }
       
       # if fallback is true and mogilefs does not have anything, fallback to docroot
       return 0 if $svc->{extra_config}->{fallback} == 1 && $miss;
@@ -158,6 +164,19 @@ sub load {
         return \@res;
     });
     
+    # recent request misses
+    Perlbal::register_global_hook("manage_command.mogilefs_misses", sub {
+        my @res;
+        foreach my $svc (keys %statobjs) {
+            my $sobj = $statobjs{$svc}->[1];
+            push @res, "$svc $_"
+                foreach @{$sobj->{mogilefs_miss_recent}};
+        }
+
+        push @res, ".";
+        return \@res;
+    });
+    
     return 1;
 }
 
@@ -166,6 +185,7 @@ sub unload {
     Perlbal::unregister_global_hook('manage_command.mogilefs');
     Perlbal::unregister_global_hook('manage_command.mogilefs_stats');
     Perlbal::unregister_global_hook('manage_command.mogilefs_recent');
+    Perlbal::unregister_global_hook('manage_command.mogilefs_misses');
     %statobjs = ();
     return 1;
 }
@@ -188,6 +208,7 @@ use fields (
     'mogilefs_misses', 
     'mogilefs_hits', 
     'mogilefs_recent',
+    'mogilefs_miss_recent',
     );
 
 sub new {
@@ -198,8 +219,10 @@ sub new {
     $self->{$_} = 0 foreach @Perlbal::Plugin::MogileFS::statkeys;
 
     # other setup
-    $self->{mogilefs_recent} = [];
-
+    foreach (qw/mogilefs_recent mogilefs_miss_recent/) {
+      $self->{$_} = [];
+    }
+    
     return $self;
 }
 
@@ -235,9 +258,13 @@ Configuration as follows:
     - Default: 0
     - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
     
-  MOGILEFS max_requests = <int> 
+  MOGILEFS max_recent = <int> 
     - Default: 100
     - Max amount of fetch records to keep for statistics. Defaults to 100.
+    
+  MOGILEFS max_miss = <int> 
+    - Default: 100
+    - Max amount of fetch records to keep for MISS statistics. Defaults to 100.
     
   MOGILEFS cache_control = <string>
     - Default: off
@@ -266,6 +293,12 @@ Configuration as follows:
   mogilelookup MISS  photo:13936:ron-and-jan.tif:640
   mogilelookup HIT   video:100:default.jpg
   mogilelookup HIT   video:799:default.jpg:130
+  
+  mogilefs_misses   Fetch recent keys that came back as a MISS. See which keys fail.
+  
+  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+  mogilelookup MISS  favicon.ico
+  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
 
 =head1 AUTHOR
 
