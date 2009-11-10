@@ -46,6 +46,11 @@ Configuration as follows:
     - Default: 0
     - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
     
+  MOGILEFS noverify = <int> 
+    - Default: 1
+    - If to verify mogstored paths on path retrieval. Let Perlbal handle this 
+      asynchronously during content delivery time. Defaults to true.
+    
   MOGILEFS max_recent = <int> 
     - Default: 100
     - Max amount of fetch records to keep for statistics. Defaults to 100.

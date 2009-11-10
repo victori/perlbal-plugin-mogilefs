@@ -25,7 +25,7 @@ sub url_to_key {
 }
 
 sub mogilefs_config {
-  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|max_miss|cache_control|retries)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent|max_miss|retries) = <input>");
+  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|max_miss|cache_control|retries|noverify)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent|max_miss|retries|noverify) = <input>");
   my ($cmd,$result) = $mc->args;
   
   my $svcname;
@@ -45,6 +45,8 @@ our %statobjs;
 sub register {
     my ( $class, $svc ) = @_;
     
+    # sane defaults
+    my $noverify =  ($svc->{extra_config}->{noverify} eq undef) ? 1 : $svc->{extra_config}->{noverify};
     my $max_recent = ($svc->{extra_config}->{max_recent} eq undef) ? 100 : $svc->{extra_config}->{max_recent};
     my $max_miss = ($svc->{extra_config}->{max_miss} eq undef) ? 100 : $svc->{extra_config}->{max_miss};
     my $retries = ($svc->{extra_config}->{retries} eq undef) ? 3 : $svc->{extra_config}->{retries};
@@ -69,7 +71,7 @@ sub register {
       while($attempts > 0) {
         # MogileFS::Client can potential die here, so we eval this and retry a few times if tracker
         # failed to respond. Eval makes sure this does not kill the perlbal process.
-        eval { @paths = $mogc->get_paths($mogkey); };
+        eval { @paths = $mogc->get_paths($mogkey,{ noverify => $noverify }); };
         last unless $@;
         $attempts-=$attempts;
       }
@@ -269,6 +271,11 @@ Configuration as follows:
   MOGILEFS fallback = <1 or 0>
     - Default: 0
     - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
+  
+  MOGILEFS noverify = <int> 
+    - Default: 1
+    - If to verify mogstored paths on path retrieval. Let Perlbal handle this 
+      asynchronously during content delivery time. Defaults to true.
     
   MOGILEFS max_recent = <int> 
     - Default: 100
