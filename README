@@ -54,6 +54,10 @@ Configuration as follows:
     - Default: 100
     - Max amount of fetch records to keep for MISS statistics. Defaults to 100.
     
+  MOGILEFS retries = <int> 
+    - Default: 3
+    - Max amount of retries on broken mogilefs tracker socket. Defaults to 3.
+    
   MOGILEFS cache_control = <string>
     - Default: off
     - Suggested: max-age=2592000

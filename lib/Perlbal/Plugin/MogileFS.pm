@@ -25,7 +25,7 @@ sub url_to_key {
 }
 
 sub mogilefs_config {
-  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|max_miss|cache_control)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent|max_miss) = <input>");
+  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|max_miss|cache_control|retries)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent|max_miss|retries) = <input>");
   my ($cmd,$result) = $mc->args;
   
   my $svcname;
@@ -47,6 +47,7 @@ sub register {
     
     my $max_recent = ($svc->{extra_config}->{max_recent} eq undef) ? 100 : $svc->{extra_config}->{max_recent};
     my $max_miss = ($svc->{extra_config}->{max_miss} eq undef) ? 100 : $svc->{extra_config}->{max_miss};
+    my $retries = ($svc->{extra_config}->{retries} eq undef) ? 3 : $svc->{extra_config}->{retries};
     
     my @trackers = split(/,/,$svc->{extra_config}->{trackers});
     my $mogc = MogileFS::Client->new(domain => $svc->{extra_config}->{domain},hosts  => \@trackers);  
@@ -60,8 +61,18 @@ sub register {
       
       #Perlbal::log('debug',url_to_key($c->{req_headers}->{uri}));
       \$sobj->{'mogilefs_requests'}++;
+      
+
       my $mogkey = url_to_key($c->{req_headers}->{uri});
-      my @paths = $mogc->get_paths($mogkey);
+      my @paths = [];
+      my $attempts = $retries;
+      while($attempts > 0) {
+        # MogileFS::Client can potential die here, so we eval this and retry a few times if tracker
+        # failed to respond. Eval makes sure this does not kill the perlbal process.
+        eval { @paths = $mogc->get_paths($mogkey); };
+        last unless $@;
+        $attempts-=$attempts;
+      }
       
       $c->watch_read(0);
       $c->watch_write(1);
@@ -109,6 +120,7 @@ sub register {
           }
       }
       $c->write(sub { $c->http_response_sent; });
+      
       return 1;
     };
     $svc->register_hook('MogileFS', 'start_web_request', $lookup_file);
@@ -265,6 +277,10 @@ Configuration as follows:
   MOGILEFS max_miss = <int> 
     - Default: 100
     - Max amount of fetch records to keep for MISS statistics. Defaults to 100.
+    
+  MOGILEFS retries = <int> 
+    - Default: 3
+    - Max amount of retries on broken mogilefs tracker socket. Defaults to 3.
     
   MOGILEFS cache_control = <string>
     - Default: off
