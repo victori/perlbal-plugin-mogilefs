@@ -410,14 +410,9 @@ Perlbal::Plugin::MogileFS - perlbal gateway to MogileFS
 
 =head1 SYNOPSIS
 
-This plugin provides Perlbal the ability to serve data out of MogileFS. Perlbal::Plugin::MogileFS defaults to asynchronous 
-request handling so it handles slow trackers gracefully without blocking the main event loop. If you wish to disable
-the asynchronous behavior to use the MogileFS::Client library instead, set async to false in the configuration file. 
-Note, asychronous mode is preferred for production use.
+This plugin provides Perlbal the ability to serve data out of MogileFS. Perlbal::Plugin::MogileFS defaults to asynchronous request handling so it handles slow trackers gracefully without blocking the main event loop. If you wish to disable the asynchronous behavior to use the MogileFS::Client library instead, set async to false in the configuration file. Note, asychronous mode is preferred for production use.
 
-URL paths are converted to ':' delimited MogileFS keys. For example, '/video/10/default.jpg' is converted to 
-'video:10:default.jpg'. You can change the way keys are hashed by modifying the url_to_key function. Future releases will 
-support URL to Key conversions to be setup in the Perlbal configuration.
+URL paths are converted to ':' delimited MogileFS keys. For example, '/video/10/default.jpg' is converted to 'video:10:default.jpg'. You can change the way keys are hashed by modifying the url_to_key function. Future releases will support URL to Key conversions to be setup in the Perlbal configuration.
 
 Configuration as follows:
 
