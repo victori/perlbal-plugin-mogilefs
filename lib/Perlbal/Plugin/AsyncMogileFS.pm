@@ -1,10 +1,9 @@
-package Perlbal::Plugin::MogileFS;
+package Perlbal::Plugin::AsyncMogileFS;
 
 use Perlbal;
 use strict;
 use warnings;
 use Data::Dumper;
-use MogileFS::Client;
 
 #
 # LOAD MogileFS
@@ -24,8 +23,28 @@ sub url_to_key {
   }
 }
 
+sub _decode_url_string {
+    my $arg = shift;
+    my $buffer = ref $arg ? $arg : \$arg;
+    my $hashref = {};  # output hash
+
+    my $pair;
+    my @pairs = split(/&/, $$buffer);
+    my ($name, $value);
+    foreach $pair (@pairs) {
+        ($name, $value) = split(/=/, $pair);
+        $value =~ tr/+/ /;
+        $value =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $name =~ tr/+/ /;
+        $name =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $hashref->{$name} .= $hashref->{$name} ? "\0$value" : $value;
+    }
+
+    return $hashref;
+}
+
 sub mogilefs_config {
-  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|fallback|max_recent|max_miss|cache_control|retries|noverify)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|fallback|max_recent|max_miss|retries|noverify) = <input>");
+  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|max_recent|max_miss|retries|cache_control|noverify)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|max_recent|max_miss|retries|noverify) = <input>");
   my ($cmd,$result) = $mc->args;
   
   my $svcname;
@@ -47,69 +66,71 @@ sub register {
     
     # sane defaults
     $svc->{extra_config}->{noverify} = 1 if $svc->{extra_config}->{noverify} eq undef;
-    $svc->{extra_config}->{fallback} = 0 if $svc->{extra_config}->{fallback} eq undef;
     $svc->{extra_config}->{max_recent} = 100 if $svc->{extra_config}->{max_recent} eq undef;
     $svc->{extra_config}->{max_miss} = 100 if $svc->{extra_config}->{max_miss} eq undef;
     $svc->{extra_config}->{retries} = 3 if $svc->{extra_config}->{retries} eq undef;
-
-    my @trackers = split(/,/,$svc->{extra_config}->{trackers});
-    my $mogc = MogileFS::Client->new(domain => $svc->{extra_config}->{domain},hosts  => \@trackers);  
     
-    my $sobj = Perlbal::Plugin::MogileFS::Stats->new();
+    my @trackers = split(/,/,$svc->{extra_config}->{trackers});
+    
+    my $sobj = Perlbal::Plugin::AsyncMogileFS::Stats->new();
     $statobjs{$svc->{name}} = [ $svc, $sobj ];
     
     my $lookup_file = sub {
       my Perlbal::ClientHTTP $c = shift;
       my $hd = $c->{req_headers};
       
-      #Perlbal::log('debug',url_to_key($c->{req_headers}->{uri}));
       \$sobj->{'mogilefs_requests'}++;
       
-
       my $mogkey = url_to_key($c->{req_headers}->{uri});
-      my @paths = ();
-      my $attempts = $svc->{extra_config}->{retries};
-      while($attempts > 0) {
-        # MogileFS::Client can potential die here, so we eval this and retry a few times if tracker
-        # failed to respond. Eval makes sure this does not kill the perlbal process.
-        eval { @paths = $mogc->get_paths($mogkey,{ noverify => $svc->{extra_config}->{noverify} }); };
-        last unless $@;
-        $attempts-=$attempts;
-      }
-      
-      $c->watch_read(0);
-      $c->watch_write(1);
+      Perlbal::Plugin::AsyncMogileFS::AsyncRequest->new(
+        domain   => $svc->{extra_config}->{domain},
+        noverify => $svc->{extra_config}->{noverify},
+        timeout  => 5,
+        retries  => $svc->{extra_config}->{retries},
+        key      => $mogkey,
+        trackers => \@trackers,
+        callback => sub {
+          my $response = shift;
 
-      my $miss = scalar(@paths) > 0 ? 0 : 1;
-      my $code = $miss == 0 ? 200 : 404;
-      my $msg = undef;
-      
-      \$sobj->{'mogilefs_misses'}++ if $miss;
-      \$sobj->{'mogilefs_hits'}++ unless $miss;
-      
-      push @{$sobj->{mogilefs_recent}}, sprintf('%s  %s',  $miss == 1 ? 'MISS' : 'HIT ', $mogkey );
-      shift(@{$sobj->{mogilefs_recent}}) if scalar(@{$sobj->{mogilefs_recent}}) > $svc->{extra_config}->{max_recent};
-      
-      if ($miss) {
-        push @{$sobj->{mogilefs_miss_recent}}, sprintf('%s  %s', 'MISS', $mogkey );
-        shift(@{$sobj->{mogilefs_miss_recent}}) if scalar(@{$sobj->{mogilefs_miss_recent}}) > $svc->{extra_config}->{max_recent};
-      }
-      
-      # if fallback is true and mogilefs does not have anything, fallback to docroot
-      return 0 if $svc->{extra_config}->{fallback} == 1 && $miss;
-      # else respond with 404
-      return $c->send_response(404) if $miss;
+          my @paths = ();
+          if (defined $response && $response =~ /OK /) {
+            eval {
+              my $res = substr($response,3);
+              $res = _decode_url_string($res);
+              @paths = map { $res->{"path$_"} } (1..$res->{paths});
+            }
+          }
 
-      my $res = $c->{res_headers} = Perlbal::HTTPHeaders->new_response($code);
-      $res->header('Cache-Control',$svc->{extra_config}->{cache_control}) if defined $svc->{extra_config}->{cache_control} && $miss == 0;
-      $res->header('X-Reproxy-URL',join(' ',@paths)) unless $miss;
-      $res->header('Server', 'Perlbal');
+          $c->watch_read(0);
+          $c->watch_write(1);
+          
+          my $miss = scalar(@paths) > 0 ? 0 : 1;
+          if ($miss) {
+            \$sobj->{'mogilefs_misses'}++;
+            push @{$sobj->{mogilefs_miss_recent}}, sprintf('%s  %s', 'MISS', $mogkey );
+            shift(@{$sobj->{mogilefs_miss_recent}}) if scalar(@{$sobj->{mogilefs_miss_recent}}) > $svc->{extra_config}->{max_miss};
+          }
+          \$sobj->{'mogilefs_hits'}++;
+          push @{$sobj->{mogilefs_recent}}, sprintf('%s  %s',  $miss == 1 ? 'MISS' : 'HIT ', $mogkey );
+          shift(@{$sobj->{mogilefs_recent}}) if scalar(@{$sobj->{mogilefs_recent}}) > $svc->{extra_config}->{max_recent};
+          return $c->send_response(404) if $miss;
 
-      $c->setup_keepalive($res);
-      $c->state('xfer_resp');
-      $c->tcp_cork(1);  # cork writes to self
-      $c->write($res->to_string_ref);
-      $c->write(sub { $c->http_response_sent; });
+
+          my $res = $c->{res_headers} = Perlbal::HTTPHeaders->new_response(200);
+          $res->header('Cache-Control',$svc->{extra_config}->{cache_control}) if defined $svc->{extra_config}->{cache_control};
+          $res->header('X-Reproxy-URL',join(' ',@paths));
+          $res->header('Server', 'Perlbal');
+
+          $c->setup_keepalive($res);
+
+          $c->state('xfer_resp');
+          $c->tcp_cork(1);  # cork writes to self
+          $c->write($res->to_string_ref);
+          $c->write(sub { $c->http_response_sent; });
+
+          return 1;
+        }
+      );
       
       return 1;
     };
@@ -127,7 +148,7 @@ sub load {
       my @res;
 
       # create temporary object for stats storage
-      my $gsobj = Perlbal::Plugin::MogileFS::Stats->new();
+      my $gsobj = Perlbal::Plugin::AsyncMogileFS::Stats->new();
       
       push @res, "\t";
 
@@ -203,7 +224,7 @@ sub unregister {
 
 
 # statistics object
-package Perlbal::Plugin::MogileFS::Stats;
+package Perlbal::Plugin::AsyncMogileFS::Stats;
 
 use fields (
     'mogilefs_requests',
@@ -214,11 +235,11 @@ use fields (
     );
 
 sub new {
-    my Perlbal::Plugin::MogileFS::Stats $self = shift;
+    my Perlbal::Plugin::AsyncMogileFS::Stats $self = shift;
     $self = fields::new($self) unless ref $self;
 
     # 0 initialize everything here
-    $self->{$_} = 0 foreach @Perlbal::Plugin::MogileFS::statkeys;
+    $self->{$_} = 0 foreach @Perlbal::Plugin::AsyncMogileFS::statkeys;
 
     # other setup
     foreach (qw/mogilefs_recent mogilefs_miss_recent/) {
@@ -228,11 +249,84 @@ sub new {
     return $self;
 }
 
+package Perlbal::Plugin::AsyncMogileFS::AsyncRequest;
+ 
+use base 'Danga::Socket';
+use fields qw(callback);
+use IO::Socket;
+use Data::Dumper;
+use Socket;
+use IO::Handle;
+
+
+sub new {
+    my Perlbal::Plugin::AsyncMogileFS::AsyncRequest $self = shift;
+    my %args = @_;
+    
+    $self = fields::new($self) unless ref $self;
+ 
+    $self->{callback} = $args{callback};
+
+    my $sock;
+    
+    foreach (1..$args{retries}) {
+      foreach (@{$args{trackers}}) {
+        eval { 
+          $sock = IO::Socket::INET->new($_); 
+          IO::Handle::blocking($sock, 0);
+        };
+        last if defined $sock;
+      }
+      last if defined $sock;
+    }
+    
+    unless (defined $sock) {
+      $self->close;
+      $self->{callback}->(undef) unless defined $sock;
+      return $self;
+    }
+    
+    $self->SUPER::new( $sock );
+    my $client = $self;
+    $self->AddTimer( $args{timeout}, sub {
+      return unless defined $self->{sock};
+      $self->watch_read(0);
+      $self->close;
+      $self->{sock} = undef;
+      $self->{callback}->(undef);
+    } );
+    $self->watch_read(1);
+    
+    $self->write( "get_paths domain=$args{domain}&noverify=$args{noverify}&key=$args{key}\r\n");
+    
+    return $self;
+}
+
+
+sub event_read {
+    my $self = shift;
+    
+    my $sock = $self->{sock};
+    my $response = "";
+    
+    while($response !~ "\r\n") {
+      my $data;
+      $sock->read($data,1);
+      $response.=$data;
+    }
+    #path1=http://xxx.xxx.xxx.xxx:7500/dev1/0/000/000/0000000001.fid&paths=1
+    
+    $self->watch_read(0);
+    $self->close;
+    $self->{sock} = undef;
+    $self->{callback}->($response);
+}
+
 1;
 
 =head1 NAME
 
-Perlbal::Plugin::MogileFS - perlbal gateway to MogileFS
+Perlbal::Plugin::AsyncMogileFS - Asynchronous Perlbal gateway to MogileFS
 
 =head1 SYNOPSIS
 
@@ -255,10 +349,6 @@ Configuration as follows:
     - List of trackers comma delimited.
     
   -- Optional Configuration options
-    
-  MOGILEFS fallback = <1 or 0>
-    - Default: 0
-    - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
   
   MOGILEFS noverify = <int> 
     - Default: 1
