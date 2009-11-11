@@ -1,5 +1,14 @@
 Revision history for Perl extension Perlbal::Plugin::MogileFS
 
+0.03
+    2009-11-11
+        - Merged async implementation into synchronous one.
+        - Plugin defaults to async mode by default.
+        - configuration improvements.
+        - code clean up.
+        - async implementation can now fallback to filesystem on key miss.
+        - Updated documentation.
+
 0.02
   2009-11-10
     - Stabilized the MogileFS implementation after production use.
