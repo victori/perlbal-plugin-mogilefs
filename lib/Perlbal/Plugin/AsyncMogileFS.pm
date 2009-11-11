@@ -4,10 +4,11 @@ use Perlbal;
 use strict;
 use warnings;
 use Data::Dumper;
+use MogileFS::Client;
 
 #
-# LOAD MogileFS
-# SET plugins        = MogileFS
+# LOAD AsyncMogileFS
+# SET plugins = AsyncMogileFS
 
 # define all stats keys here
 our @statkeys = qw(mogilefs_requests mogilefs_misses mogilefs_hits);
@@ -23,28 +24,8 @@ sub url_to_key {
   }
 }
 
-sub _decode_url_string {
-    my $arg = shift;
-    my $buffer = ref $arg ? $arg : \$arg;
-    my $hashref = {};  # output hash
-
-    my $pair;
-    my @pairs = split(/&/, $$buffer);
-    my ($name, $value);
-    foreach $pair (@pairs) {
-        ($name, $value) = split(/=/, $pair);
-        $value =~ tr/+/ /;
-        $value =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
-        $name =~ tr/+/ /;
-        $name =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
-        $hashref->{$name} .= $hashref->{$name} ? "\0$value" : $value;
-    }
-
-    return $hashref;
-}
-
 sub mogilefs_config {
-  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|max_recent|max_miss|retries|cache_control|noverify)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|max_recent|max_miss|retries|noverify) = <input>");
+  my $mc = shift->parse(qr/^mogilefs\s*(domain|trackers|max_recent|max_miss|fallback|retries|cache_control|noverify)\s*=\s*(.*)$/,"usage: mogilefs (domain|trackers|max_recent|max_miss|fallback|retries|noverify) = <input>");
   my ($cmd,$result) = $mc->args;
   
   my $svcname;
@@ -66,6 +47,7 @@ sub register {
     
     # sane defaults
     $svc->{extra_config}->{noverify} = 1 if $svc->{extra_config}->{noverify} eq undef;
+    $svc->{extra_config}->{fallback} = 0 if $svc->{extra_config}->{fallback} eq undef;
     $svc->{extra_config}->{max_recent} = 100 if $svc->{extra_config}->{max_recent} eq undef;
     $svc->{extra_config}->{max_miss} = 100 if $svc->{extra_config}->{max_miss} eq undef;
     $svc->{extra_config}->{retries} = 3 if $svc->{extra_config}->{retries} eq undef;
@@ -113,8 +95,19 @@ sub register {
           \$sobj->{'mogilefs_hits'}++;
           push @{$sobj->{mogilefs_recent}}, sprintf('%s  %s',  $miss == 1 ? 'MISS' : 'HIT ', $mogkey );
           shift(@{$sobj->{mogilefs_recent}}) if scalar(@{$sobj->{mogilefs_recent}}) > $svc->{extra_config}->{max_recent};
-          return $c->send_response(404) if $miss;
-
+          
+          if ($miss) {
+            if($svc->{extra_config}->{fallback} == 1) {
+              # GET/HEAD requests (local, from disk)
+              if ($hd->request_method eq 'GET' || $hd->request_method eq 'HEAD') {
+                  # and once we have it, start serving
+                  $c->watch_read(0);
+                  return $c->_serve_request($hd);
+              }
+            }
+            # else, bad request
+            return $c->send_response(404);
+          }
 
           my $res = $c->{res_headers} = Perlbal::HTTPHeaders->new_response(200);
           $res->header('Cache-Control',$svc->{extra_config}->{cache_control}) if defined $svc->{extra_config}->{cache_control};
@@ -222,6 +215,25 @@ sub unregister {
     return 1;
 }
 
+sub _decode_url_string {
+    my $arg = shift;
+    my $buffer = ref $arg ? $arg : \$arg;
+    my $hashref = {};  # output hash
+
+    my $pair;
+    my @pairs = split(/&/, $$buffer);
+    my ($name, $value);
+    foreach $pair (@pairs) {
+        ($name, $value) = split(/=/, $pair);
+        $value =~ tr/+/ /;
+        $value =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $name =~ tr/+/ /;
+        $name =~ s/%([a-fA-F0-9][a-fA-F0-9])/pack("C", hex($1))/eg;
+        $hashref->{$name} .= $hashref->{$name} ? "\0$value" : $value;
+    }
+
+    return $hashref;
+}
 
 # statistics object
 package Perlbal::Plugin::AsyncMogileFS::Stats;
@@ -326,80 +338,15 @@ sub event_read {
 
 =head1 NAME
 
-Perlbal::Plugin::AsyncMogileFS - Asynchronous Perlbal gateway to MogileFS
+Perlbal::Plugin::AsyncMogileFS - Asynchronous Perlbal MogileFS Implementation
 
 =head1 SYNOPSIS
 
-This plugin provides Perlbal the ability to serve data out of MogileFS.
+This plugin provides Perlbal the ability to serve data out of MogileFS asynchronously.
 
 URL paths are converted to ':' delimited MogileFS keys. For example, '/video/10/default.jpg' is converted to 'video:10:default.jpg'. You can change the way keys are hashed by modifying the url_to_key function. Future releases will support URL to Key conversions to be setup in the Perlbal configuration.
 
-Configuration as follows:
-
-  See sample/perlbal.conf
-  
-  -- Required Configuration Options
-  
-  MOGILEFS domain = <domain name>
-    - Default: none
-    - The default MogileFS domain to use for the service.
-    
-  MOGILEFS trackers = <serv1:6001,serv2:6001>
-    - Default: none
-    - List of trackers comma delimited.
-    
-  -- Optional Configuration options
-  
-  MOGILEFS noverify = <int> 
-    - Default: 1
-    - If to verify mogstored paths on path retrieval. Let Perlbal handle this 
-      asynchronously during content delivery time. Defaults to true.
-    
-  MOGILEFS max_recent = <int> 
-    - Default: 100
-    - Max amount of fetch records to keep for statistics. Defaults to 100.
-    
-  MOGILEFS max_miss = <int> 
-    - Default: 100
-    - Max amount of fetch records to keep for MISS statistics. Defaults to 100.
-    
-  MOGILEFS retries = <int> 
-    - Default: 3
-    - Max amount of retries on broken mogilefs tracker socket. Defaults to 3.
-    
-  MOGILEFS cache_control = <string>
-    - Default: off
-    - Suggested: max-age=2592000
-    - Cache-Control headers appended to responses on HIT for forward caching proxies. 
-      It is recommended to have squid or varnish in front.
-  
-=head1 MANAGEMENT COMMANDS
-
-  Telnet into your Perlbal management interface that is normally configured on port 60000.
-
-  mogilefs_stats    Fetch statistics for all mogilefs web services served by this perlbal instance.
-  
-  mogilelookup    mogilefs_hits                       14
-  mogilelookup    mogilefs_misses                     12
-  mogilelookup    mogilefs_requests                   26
-
-  total           mogilefs_hits                       14
-  total           mogilefs_misses                     12
-  total           mogilefs_requests                   26
-  
-  mogilefs_recent   Fetch recent keys tried with MISS/HIT information. See which keys fail.
-  
-  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
-  mogilelookup MISS  favicon.ico
-  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
-  mogilelookup HIT   video:100:default.jpg
-  mogilelookup HIT   video:799:default.jpg:130
-  
-  mogilefs_misses   Fetch recent keys that came back as a MISS. See which keys fail.
-  
-  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
-  mogilelookup MISS  favicon.ico
-  mogilelookup MISS  photo:13936:ron-and-jan.tif:640
+See Perlbal::Plugin::MogileFS for configuration documentation.
 
 =head1 AUTHOR
 

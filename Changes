@@ -1,5 +1,10 @@
 Revision history for Perl extension Perlbal::Plugin::MogileFS
 
+0.02
+  2009-11-10
+    - Stabilized the MogileFS implementation after production use.
+    - Created new async implementation that does not stall event loop on slow tracker responses.
+
 0.01
     2009-11-07
         - first revision out.

@@ -22,7 +22,11 @@ Perlbal::Plugin::MogileFS documentation is available as in POD. So you can do:
 
     % perldoc Perlbal::Plugin::MogileFS
     
+    Depending on what implementation your using.
+    
 This plugin provides Perlbal the ability to serve data out of MogileFS.
+
+There are two implementations of this plugin, Perlbal::Plugin::MogileFS which is the synchronous implementation that stalls the Perlbal event loop, so you need fast trackers to keep up with demand. The second implementation Perlbal::Plugin::AsyncMogileFS is asynchronous and does not stall the event loop waiting for slow trackers to respond. It is suggested you use the latter in production.
 
 URL paths are converted to ':' delimited MogileFS keys. For example, '/video/10/default.jpg' is converted to 'video:10:default.jpg'. You can change the way keys are hashed by modifying the url_to_key function. Future releases will support URL to Key conversions to be setup in the Perlbal configuration.
 
