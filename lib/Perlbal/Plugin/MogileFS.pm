@@ -26,7 +26,7 @@ sub url_to_key {
 }
 
 sub mogilefs_config {
-  my $valid_opts = "domain|trackers|max_recent|max_miss|fallback|retries|cache_control|noverify|async";
+  my $valid_opts = "domain|trackers|max_recent|max_miss|fallback|retries|cache_control|noverify|async|timeout";
   my $mc = shift->parse(qr/^mogilefs\s*($valid_opts)\s*=\s*(.*)$/,"usage: mogilefs ($valid_opts) = <input>");
   my ($cmd,$result) = $mc->args;
   
@@ -63,6 +63,7 @@ sub register {
     $svc->{extra_config}->{max_recent} = 100 if $svc->{extra_config}->{max_recent} eq undef;
     $svc->{extra_config}->{max_miss} = 100 if $svc->{extra_config}->{max_miss} eq undef;
     $svc->{extra_config}->{retries} = 3 if $svc->{extra_config}->{retries} eq undef;
+    $svc->{extra_config}->{timeout} = 5 if $svc->{extra_config}->{timeout} eq undef;
     $svc->{extra_config}->{async} = 1 if $svc->{extra_config}->{async} eq undef;
     
     my @trackers = split(/,/,$svc->{extra_config}->{trackers});
@@ -93,6 +94,7 @@ sub register {
       };
       
       if ($svc->{extra_config}->{async}) {
+        # Does not need to return, async event.
         handle_nonblocking($ctx);
       } else {
         return handle_blocking($ctx);
@@ -127,7 +129,7 @@ sub handle_nonblocking {
   Perlbal::Plugin::MogileFS::AsyncRequest->new(
     domain   => $ctx->{svc}->{extra_config}->{domain},
     noverify => $ctx->{svc}->{extra_config}->{noverify},
-    timeout  => 5,
+    timeout  => $ctx->{svc}->{extra_config}->{timeout},
     retries  => $ctx->{svc}->{extra_config}->{retries},
     key      => $ctx->{key},
     trackers => $ctx->{trackers},
@@ -377,7 +379,7 @@ sub new {
     } );
     $self->watch_read(1);
     
-    $self->write( "get_paths domain=$args{domain}&noverify=$args{noverify}&key=$args{key}\r\n");
+    $self->write( "get_paths domain=$args{domain}&noverify=$args{noverify}&key=$args{key}\r\n" );
     
     return $self;
 }
@@ -433,6 +435,11 @@ Configuration as follows:
   MOGILEFS async = <on/off> 
     - Default: on
     - If to use asynchronous processing to avoid blocking the event loop. Defaults to true.
+    
+  MOGILEFS timeout = <int> 
+    - Default: 5
+    - The amount of time perlbal will wait for the tracker to respond with the result before giving up. 
+      Defaults to 5 seconds.
     
   MOGILEFS fallback = <on/off>
     - Default: off
