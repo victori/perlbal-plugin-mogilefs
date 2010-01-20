@@ -48,6 +48,10 @@ Configuration as follows:
     - Default: on
     - If to use asynchronous processing to avoid blocking the event loop. Defaults to true.
     
+  MOGILEFS etag = <on/off> 
+    - Default: on
+    - If to generate an ETag with the response. Defaults to true.
+    
   MOGILEFS fallback = <on/off>
     - Default: off
     - Should Perlbal try the filesystem docroot if MogileFS key lookup fails.
