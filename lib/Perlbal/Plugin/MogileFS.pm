@@ -5,6 +5,7 @@ use strict;
 use warnings;
 use Data::Dumper;
 use MogileFS::Client;
+use Digest::MD5 qw(md5 md5_hex md5_base64);
 
 #
 # LOAD MogileFS
@@ -26,7 +27,7 @@ sub url_to_key {
 }
 
 sub mogilefs_config {
-  my $valid_opts = "domain|trackers|max_recent|max_miss|fallback|retries|cache_control|noverify|async|timeout";
+  my $valid_opts = "domain|trackers|max_recent|max_miss|etag|fallback|retries|cache_control|noverify|async|timeout";
   my $mc = shift->parse(qr/^mogilefs\s*($valid_opts)\s*=\s*(.*)$/,"usage: mogilefs ($valid_opts) = <input>");
   my ($cmd,$result) = $mc->args;
   
@@ -65,6 +66,7 @@ sub register {
     $svc->{extra_config}->{retries} = 3 if $svc->{extra_config}->{retries} eq undef;
     $svc->{extra_config}->{timeout} = 5 if $svc->{extra_config}->{timeout} eq undef;
     $svc->{extra_config}->{async} = 1 if $svc->{extra_config}->{async} eq undef;
+    $svc->{extra_config}->{etag} = 1 if $svc->{extra_config}->{etag} eq undef;
     
     my @trackers = split(/,/,$svc->{extra_config}->{trackers});
     my $mogc;
@@ -189,6 +191,12 @@ sub handle_response {
 
   my $res = $c->{res_headers} = Perlbal::HTTPHeaders->new_response(200);
   $res->header('Cache-Control',$svc->{extra_config}->{cache_control}) if defined $svc->{extra_config}->{cache_control};
+  if ($svc->{extra_config}->{etag}) {
+    # grab the last xxx/xxxx.fid portion of the url
+    # from the first response url and hash it
+    my ($p1,$p2) = @paths[0] =~ /.*\/([0-9]+)\/([0-9]+\.fid)/;
+    $res->header('ETag',md5_hex($p1.$p2));
+  }
   $res->header('X-Reproxy-URL',join(' ',@paths));
   $res->header('Server', 'Perlbal');
 
@@ -435,6 +443,10 @@ Configuration as follows:
   MOGILEFS async = <on/off> 
     - Default: on
     - If to use asynchronous processing to avoid blocking the event loop. Defaults to true.
+    
+  MOGILEFS etag = <on/off> 
+    - Default: on
+    - If to generate an ETag with the response. Defaults to true.
     
   MOGILEFS timeout = <int> 
     - Default: 5
