@@ -17,12 +17,14 @@ our @statkeys = qw(mogilefs_requests mogilefs_misses mogilefs_hits);
 # modify this function to adapt urls to your mogilefs keys
 sub url_to_key {
   my $uri = shift;
+  # don't copy url past ?foo
+  my ($core_uri) = $uri =~ /(.*?)(?:\?|$)/;
   # This is specific to our needs at fab40
-  if($uri =~ /\/thumbx[0-9]+\//) {
-    my ($type,$id,$size,$pic) = $uri =~ /\/(.*)\/([0-9]+)\/thumbx([0-9]+)\/(.*)/;
+  if($core_uri =~ /\/thumbx[0-9]+\//) {
+    my ($type,$id,$size,$pic) = $core_uri =~ /\/(.*)\/([0-9]+)\/thumbx([0-9]+)\/(.*)/;
     return "$type:$id:$pic:$size";
   } else {
-    return join(':',split(/\//,substr($uri,1))); 
+    return join(':',split(/\//,substr($core_uri,1))); 
   }
 }
 
@@ -47,8 +49,6 @@ sub mogilefs_config {
   
   $ss->{extra_config}->{$cmd} = $result;
   
-  Perlbal::log('info','Configured Perlbal::Plugin::MogileFS');
-  
   return 1;
 }
 
@@ -59,14 +59,16 @@ sub register {
     my ( $class, $svc ) = @_;
     
     # sane defaults
-    $svc->{extra_config}->{noverify} = 1 if $svc->{extra_config}->{noverify} eq undef;
-    $svc->{extra_config}->{fallback} = 0 if $svc->{extra_config}->{fallback} eq undef;
-    $svc->{extra_config}->{max_recent} = 100 if $svc->{extra_config}->{max_recent} eq undef;
-    $svc->{extra_config}->{max_miss} = 100 if $svc->{extra_config}->{max_miss} eq undef;
-    $svc->{extra_config}->{retries} = 3 if $svc->{extra_config}->{retries} eq undef;
-    $svc->{extra_config}->{timeout} = 5 if $svc->{extra_config}->{timeout} eq undef;
-    $svc->{extra_config}->{async} = 1 if $svc->{extra_config}->{async} eq undef;
-    $svc->{extra_config}->{etag} = 1 if $svc->{extra_config}->{etag} eq undef;
+    $svc->{extra_config}->{noverify} = 1 unless defined $svc->{extra_config}->{noverify};
+    $svc->{extra_config}->{fallback} = 0 unless defined $svc->{extra_config}->{fallback};
+    $svc->{extra_config}->{max_recent} = 100 unless defined $svc->{extra_config}->{max_recent};
+    $svc->{extra_config}->{max_miss} = 100 unless defined $svc->{extra_config}->{max_miss};
+    $svc->{extra_config}->{retries} = 3 unless defined $svc->{extra_config}->{retries};
+    $svc->{extra_config}->{timeout} = 5 unless defined $svc->{extra_config}->{timeout};
+    $svc->{extra_config}->{async} = 1 unless defined $svc->{extra_config}->{async};
+    $svc->{extra_config}->{etag} = 1 unless defined $svc->{extra_config}->{etag};
+    
+    Perlbal::log('info','Configured Perlbal::Plugin::MogileFS');
     
     my @trackers = split(/,/,$svc->{extra_config}->{trackers});
     my $mogc;
@@ -81,7 +83,7 @@ sub register {
       my Perlbal::ClientHTTP $c = shift;
       my $hd = $c->{req_headers};
       
-      \$sobj->{'mogilefs_requests'}++;
+      $sobj->{'mogilefs_requests'}++;
       
       my $mogkey = url_to_key($c->{req_headers}->{uri});
       
@@ -168,11 +170,11 @@ sub handle_response {
   
   my $miss = scalar(@paths) > 0 ? 0 : 1;
   if ($miss) {
-    \$sobj->{'mogilefs_misses'}++;
+    $sobj->{'mogilefs_misses'}++;
     push @{$sobj->{mogilefs_miss_recent}}, sprintf('%s  %s', 'MISS', $mogkey );
     shift(@{$sobj->{mogilefs_miss_recent}}) if scalar(@{$sobj->{mogilefs_miss_recent}}) > $svc->{extra_config}->{max_miss};
   }
-  \$sobj->{'mogilefs_hits'}++;
+  $sobj->{'mogilefs_hits'}++;
   push @{$sobj->{mogilefs_recent}}, sprintf('%s  %s',  $miss == 1 ? 'MISS' : 'HIT ', $mogkey );
   shift(@{$sobj->{mogilefs_recent}}) if scalar(@{$sobj->{mogilefs_recent}}) > $svc->{extra_config}->{max_recent};
   
@@ -194,7 +196,7 @@ sub handle_response {
   if ($svc->{extra_config}->{etag}) {
     # grab the last xxx/xxxx.fid portion of the url
     # from the first response url and hash it
-    my ($p1,$p2) = @paths[0] =~ /.*\/([0-9]+)\/([0-9]+\.fid)/;
+    my ($p1,$p2) = $paths[0] =~ /.*\/([0-9]+)\/([0-9]+\.fid)/;
     $res->header('ETag',md5_hex($p1.$p2));
   }
   $res->header('X-Reproxy-URL',join(' ',@paths));
