@@ -173,8 +173,9 @@ sub handle_response {
     $sobj->{'mogilefs_misses'}++;
     push @{$sobj->{mogilefs_miss_recent}}, sprintf('%s  %s', 'MISS', $mogkey );
     shift(@{$sobj->{mogilefs_miss_recent}}) if scalar(@{$sobj->{mogilefs_miss_recent}}) > $svc->{extra_config}->{max_miss};
+  } else {
+    $sobj->{'mogilefs_hits'}++;
   }
-  $sobj->{'mogilefs_hits'}++;
   push @{$sobj->{mogilefs_recent}}, sprintf('%s  %s',  $miss == 1 ? 'MISS' : 'HIT ', $mogkey );
   shift(@{$sobj->{mogilefs_recent}}) if scalar(@{$sobj->{mogilefs_recent}}) > $svc->{extra_config}->{max_recent};
   
